@@ -165,9 +165,9 @@ def stock_info():
 	len_of_category = len(categories)
 	text_for_reply = "*Данные о складе*\n"
 
-	for i in range(1, len_of_category):
+	for i in range(1, len_of_category+1):
 		items = take_items(i)
-		text_for_reply += f"*\n{categories[i][1]}*\n"
+		text_for_reply += f"*\n{categories[i-1][1]}*\n"
 		for item_id, item_name, item_quantity, category_id in items:
 			text_for_reply += f"{item_name}: {item_quantity}\n"
 
