@@ -1,3 +1,4 @@
+import time
 from db import *
 import telebot
 from telebot import types
@@ -9,8 +10,6 @@ load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 bot = telebot.TeleBot(TOKEN)
-
-user_states = {}
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -29,10 +28,10 @@ def start(message):
 	if not check_exists(user):
 		bot.send_message(message.chat.id, "Вы не являетесь сотрудником!")
 	elif check_admin_permission(user):
-		markup.add(btn1,btn2,btn5,btn6,btn7,btn8,btn9)
+		markup.add(btn1,btn2,btn3,btn4,btn5,btn6,btn7,btn8)
 		bot.send_message(message.chat.id, "Ваша роль: админ", reply_markup=markup)
 	else:
-		markup.add(btn1,btn2,btn8,btn9)
+		markup.add(btn1,btn2,btn8)
 		bot.send_message(message.chat.id, "Ваша роль: сотрудник", reply_markup=markup)
 
 @bot.message_handler(func=lambda message: True)
@@ -47,11 +46,11 @@ def handle_menu_button(message):
 		text_for_reply = stock_info()
 		bot.send_message(message.chat.id, text_for_reply, parse_mode="Markdown")
 	elif message.text == "Добавить новый товар":
-		sent_msg = bot.send_message(message.chat.id, "Введите название товара:")
-		bot.register_next_step_handler(sent_msg, process_add_item)
+		markup = make_categories_markup("add_category")
+		bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
 	elif message.text == "Удалить товар полностью":
-		markup = make_items_markup("delete_item")
-		bot.send_message(message.chat.id, "Выберите товар:", reply_markup=markup)
+		markup = make_categories_markup("delete_category")
+		bot.send_message(message.chat.id, "Выберите категорию:", reply_markup=markup)
 	elif message.text == "Добавить пользователя":
 		sent_msg = bot.send_message(message.chat.id, "Введите id пользователя(без @):")
 		bot.register_next_step_handler(sent_msg, process_add_user)
@@ -62,17 +61,34 @@ def handle_menu_button(message):
 		markup = make_users_markup("role_user", message.from_user.username)
 		bot.send_message(message.chat.id, "Выберите пользователя:", reply_markup=markup)
 
+# Add new item
+@bot.callback_query_handler(func=lambda call: call.data.startswith('add_category:'))
+def handle_add_to_category(call):
+	category_id = int(call.data.split(':')[1])
+	sent_msg = bot.send_message(call.message.chat.id, "Введите название товара(укажите единицу измерения в скобках):")
+	bot.register_next_step_handler(sent_msg, lambda msg: process_add_item(msg, category_id))
+def process_add_item(message, category_id):
+	item_name = message.text
+	add_new_item(message.from_user.username, item_name, category_id)
+	bot.send_message(message.chat.id, f"Вы добавили {item_name} в склад.")
+
+# Delete item
+@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_category:'))
+def handle_delete_to_category(call):
+	category_id = int(call.data.split(':')[1])
+	markup = make_items_markup("delete_item", category_id)
+	bot.send_message(call.message.chat.id, "Выберите товар для удаления", reply_markup=markup)
+@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_item:'))
+def process_delete_item(call):
+	item_id = int(call.data.split(':')[1])
+	delete_item(call.message.chat.username, item_id)
+	bot.send_message(call.message.chat.id, f"Вы добавили удалили товар.")
+
 # Add new user
 def process_add_user(message):
 	username = message.text
 	create_user(message.from_user.username, username)
 	bot.send_message(message.chat.id, f"Вы добавили {username} в систему.")
-
-# Add new item
-def process_add_item(message):
-	item_name = message.text
-	add_new_item(message.from_user.username, item_name)
-	bot.send_message(message.chat.id, f"Вы добавили {item_name} в склад.")
 
 # Delete user
 @bot.callback_query_handler(func=lambda call: call.data.startswith('delete_user:'))
@@ -88,13 +104,6 @@ def handle_change_user_role(call):
 	update_role_user(call.message.chat.username, user_id)
 	bot.send_message(call.message.chat.id, f"Вы поменяли роль у пользователя")
 
-# Delete item
-@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_item:'))
-def handle_delete_item(call):
-	item_id = int(call.data.split(':')[1])
-	delete_item(call.message.chat.username, item_id)
-	bot.send_message(call.message.chat.id, f"Вы удалили товар")
-
 # Take from stock
 @bot.callback_query_handler(func=lambda call: call.data.startswith('take_category:'))
 def handle_take_category(call):
@@ -107,12 +116,15 @@ def handle_take_item(call):
 	sent_msg = bot.send_message(call.message.chat.id, "Введите количество:")
 	bot.register_next_step_handler(sent_msg, lambda msg: process_take_item_quantity(msg, item_id))
 def process_take_item_quantity(message, item_id):
-	count = int(message.text)
-	if count_of_item(item_id) - count < 0:
-		bot.send_message(message.chat.id, f"Не достаточно товара.")
+	if message.text.isdigit():
+		count = int(message.text)
+		if count_of_item(item_id) - count < 0:
+			bot.send_message(message.chat.id, f"Не достаточно товара.")
+		else:
+			take_from_stock(message.from_user.username, item_id, count)
+			bot.send_message(message.chat.id, f"Вы взяли {count} шт. товара.")
 	else:
-		take_from_stock(message.from_user.username, item_id, count)
-		bot.send_message(message.chat.id, f"Вы взяли {count} шт. товара.")
+		bot.send_message(message.chat.id, f"Нужно ввести число, повторите операцию заново!")
 
 
 # Put in stock
@@ -127,9 +139,12 @@ def handle_put_item(call):
 	sent_msg = bot.send_message(call.message.chat.id, "Введите количество:")
 	bot.register_next_step_handler(sent_msg, lambda msg: process_put_item_quantity(msg, item_id))
 def process_put_item_quantity(message, item_id):
-	count = int(message.text)
-	put_in_stock(message.from_user.username, item_id, count)
-	bot.send_message(message.chat.id, f"Вы внесли {count} шт. товара.")
+	if message.text.isdigit():
+		count = int(message.text)
+		put_in_stock(message.from_user.username, item_id, count)
+		bot.send_message(message.chat.id, f"Вы внесли {count} шт. товара.")
+	else:
+		bot.send_message(message.chat.id, f"Нужно ввести число, повторите операцию заново!")
 
 
 # Helpers
@@ -174,4 +189,11 @@ def stock_info():
 	return text_for_reply
 
 
-bot.polling()
+if __name__=='__main__':
+	while True:
+		try:
+			bot.polling(non_stop=True, interval=0)
+		except Exception as e:
+			print(e)
+			time.sleep(5)
+			continue

@@ -113,11 +113,11 @@ name: Name of item
 Returns:
 	None
 """
-def add_new_item(whois, name):
+def add_new_item(whois, name, category_id):
 	with sqlite3.connect(db_name) as conn:
 		cursor = conn.cursor()
 		if check_admin_permission(whois):
-			cursor.execute("INSERT INTO item(name, count) VALUES (?, 0)", (name,))
+			cursor.execute("INSERT INTO item(name, count, category_id) VALUES (?, 0, ?)", (name, category_id))
 			conn.commit()
 
 """
